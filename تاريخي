@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="ar">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>تاريخي</title>
+
+<style>
+body{
+  margin:0;
+  font-family:Arial;
+  background:black;
+  color:white;
+  transition:0.3s;
+}
+body.light{background:white;color:black}
+
+#loginScreen{
+  position:fixed;inset:0;
+  background:black;
+  display:flex;
+  flex-direction:column;
+  justify-content:center;
+  padding:20px;
+  z-index:1000;
+}
+
+#loginScreen input,#loginScreen button{
+  margin-bottom:12px;
+  padding:14px;
+  font-size:16px;
+  border-radius:10px;
+  border:none;
+}
+
+#loginScreen button{
+  background:red;
+  color:white;
+}
+
+#avatarPreview{
+  width:90px;height:90px;
+  border-radius:50%;
+  margin:10px auto;
+  object-fit:cover;
+  border:2px solid white;
+}
+
+#app{display:none;padding:12px}
+.blur{filter:blur(6px)}
+
+.header{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+}
+
+#avatar{
+  width:46px;height:46px;
+  border-radius:50%;
+  border:2px solid white;
+  cursor:pointer;
+}
+
+.title-highlight{color:yellow;font-size:22px}
+
+input[type="text"]{
+  width:100%;
+  padding:16px;
+  font-size:18px;
+  border-radius:10px;
+  border:2px solid white;
+  background:black;
+  color:white;
+  margin:12px 0;
+}
+
+body.light input[type="text"]{
+  background:white;color:black;border-color:black;
+}
+
+.search-btn{
+  width:100%;
+  padding:18px;
+  font-size:18px;
+  background:red;
+  color:white;
+  border:none;
+  border-radius:10px;
+}
+
+#results{
+  max-height:50vh;
+  overflow-y:auto;
+  margin-top:10px;
+}
+
+.task{
+  border:1px solid white;
+  padding:12px;
+  border-radius:10px;
+  margin-bottom:8px;
+}
+
+#themeToggle,#muteToggle{
+  width:100%;
+  padding:14px;
+  margin-top:10px;
+  border-radius:10px;
+  border:2px solid white;
+  background:black;
+  color:white;
+}
+
+body.light #themeToggle,
+body.light #muteToggle{
+  background:white;color:black;border-color:black;
+}
+
+/* الحساب */
+#accountPanel{
+  position:fixed;inset:0;
+  background:rgba(0,0,0,0.85);
+  display:none;
+  justify-content:center;
+  align-items:center;
+  z-index:2000;
+}
+
+.panel{
+  background:#111;
+  padding:20px;
+  border-radius:12px;
+  width:90%;
+  max-width:350px;
+}
+
+.panel input,.panel button{
+  width:100%;
+  padding:12px;
+  margin-top:10px;
+  border-radius:8px;
+  border:none;
+}
+
+.delete{background:red;color:white}
+.close{background:gray;color:white}
+</style>
+</head>
+
+<body>
+
+<!-- شاشة الدخول -->
+<div id="loginScreen">
+  <h2 style="text-align:center">إنشاء حساب</h2>
+  <input id="username" placeholder="Username">
+  <input id="password" type="password" placeholder="Password">
+  <input type="file" accept="image/*" onchange="previewAvatar(event)">
+  <img id="avatarPreview">
+  <button onclick="saveUser()">دخول</button>
+</div>
+
+<!-- التطبيق -->
+<div id="app">
+  <div class="header">
+    <span class="title-highlight">تاريخي</span>
+    <img id="avatar" onclick="openAccount()">
+  </div>
+
+  <button id="themeToggle" onclick="toggleTheme()">تبديل الثيم</button>
+
+  <input type="text" id="searchInput" placeholder="اكتب اسم الملك أو الرئيس">
+  <button class="search-btn" onclick="searchFigure()">بحث</button>
+
+  <div id="results"></div>
+
+  <button id="muteToggle" onclick="toggleMute()">🔊 كتم الصوت</button>
+</div>
+
+<!-- لوحة الحساب -->
+<div id="accountPanel">
+  <div class="panel">
+    <h3 style="text-align:center">الحساب</h3>
+    <img id="avatarEdit" style="width:80px;height:80px;border-radius:50%;display:block;margin:auto">
+    <input id="editUsername" placeholder="Username">
+    <input id="editPassword" type="password" placeholder="Password">
+    <input type="file" accept="image/*" onchange="previewAvatarEdit(event)">
+    <button onclick="saveAccount()">💾 حفظ</button>
+    <button class="delete" onclick="deleteAccount()">🗑️ حذف الحساب</button>
+    <button class="close" onclick="closeAccount()">إغلاق</button>
+  </div>
+</div>
+
+<script>
+const USER_KEY="history_user";
+const THEME_KEY="history_theme";
+const MUTE_KEY="history_mute";
+
+const DEFAULT_AVATAR =
+"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200'><rect width='100%' height='100%' fill='%23333'/><circle cx='100' cy='80' r='40' fill='%23aaa'/><rect x='40' y='130' width='120' height='50' rx='25' fill='%23aaa'/></svg>";
+
+let audioCtx=null;
+let isMuted = localStorage.getItem(MUTE_KEY)==="true";
+
+function playSound(f,d){
+  if(isMuted) return;
+  if(!audioCtx){
+    audioCtx = new (window.AudioContext||window.webkitAudioContext)();
+  }
+  const o=audioCtx.createOscillator();
+  const g=audioCtx.createGain();
+  o.frequency.value=f;
+  g.gain.value=0.1;
+  o.connect(g); g.connect(audioCtx.destination);
+  o.start(); setTimeout(()=>o.stop(),d);
+}
+
+function vibrate(ms){
+  if(navigator.vibrate) navigator.vibrate(ms);
+}
+
+/* تسجيل */
+function previewAvatar(e){
+  const file=e.target.files[0];
+  if(!file) return;
+  const r=new FileReader();
+  r.onload=()=>avatarPreview.src=r.result;
+  r.readAsDataURL(file);
+}
+
+function saveUser(){
+  if(!username.value || !password.value){
+    playSound(200,400); vibrate(200);
+    alert("اكتب البيانات");
+    return;
+  }
+  const user={
+    username:username.value,
+    password:password.value,
+    avatar:avatarPreview.src || DEFAULT_AVATAR
+  };
+  localStorage.setItem(USER_KEY,JSON.stringify(user));
+  playSound(800,200);
+  startApp();
+}
+
+function startApp(){
+  const u=JSON.parse(localStorage.getItem(USER_KEY));
+  if(!u) return;
+  loginScreen.style.display="none";
+  app.style.display="block";
+  avatar.src=u.avatar;
+}
+
+/* الحساب */
+function openAccount(){
+  const u=JSON.parse(localStorage.getItem(USER_KEY));
+  editUsername.value=u.username;
+  editPassword.value=u.password;
+  avatarEdit.src=u.avatar;
+  app.classList.add("blur");
+  accountPanel.style.display="flex";
+}
+
+function closeAccount(){
+  app.classList.remove("blur");
+  accountPanel.style.display="none";
+}
+
+function previewAvatarEdit(e){
+  const f=e.target.files[0];
+  if(!f) return;
+  const r=new FileReader();
+  r.onload=()=>avatarEdit.src=r.result;
+  r.readAsDataURL(f);
+}
+
+function saveAccount(){
+  if(!editUsername.value || !editPassword.value){
+    alert("اكتب البيانات");
+    return;
+  }
+  const u={
+    username:editUsername.value,
+    password:editPassword.value,
+    avatar:avatarEdit.src || DEFAULT_AVATAR
+  };
+  localStorage.setItem(USER_KEY,JSON.stringify(u));
+  avatar.src=u.avatar;
+  playSound(700,200);
+  closeAccount();
+}
+
+function deleteAccount(){
+  if(confirm("متأكد؟")){
+    localStorage.clear();
+    location.reload();
+  }
+}
+
+/* الثيم والصوت */
+function toggleTheme(){
+  document.body.classList.toggle("light");
+  localStorage.setItem(THEME_KEY,
+    document.body.classList.contains("light")?"light":"dark");
+}
+
+function toggleMute(){
+  isMuted=!isMuted;
+  localStorage.setItem(MUTE_KEY,isMuted);
+  muteToggle.textContent=isMuted?"🔇 تشغيل الصوت":"🔊 كتم الصوت";
+}
+
+/* البحث */
+const figures={
+
+"نارمر": ["أول فرعون موحد لمصر العليا والسفلى","أسّس أول حكومة مركزية","وضع رموز الحكم الملكي"],
+"حور عحا": ["واصل توحيد المناطق","نظّم الإدارة الداخلية","عزّز سلطة الملك"],
+"دن": ["وسع الأراضي","طور الجيش","بنَى المعابد"],
+"عجاب": ["وسع الأراضي","طور الإدارة","دعم الزراعة"],
+"سنما": ["طور التجارة","وسع الأراضي","شجع الفنون"],
+"خنت": ["بنَى معابد","وسع الأراضي","طور الجيش"],
+"جدير": ["طور نظام الجباية","حسّن الإدارة","وسع الأراضي"],
+"نتر": ["أسّس علاقات دبلوماسية","وسع التجارة","طور الإدارة"],
+"زوسر": ["بنى الهرم المدرج","طور العمارة","وسع الأراضي"],
+"خع سخم": ["وسع الأراضي","طور الجيش","بنى المعابد"],
+"خين نج": ["وسع التجارة","طور الإدارة","شجع الفنون"],
+"سنفرو": ["بنى أهرامات متعددة","وسع الأراضي","طور الجيش"],
+"خوفو": ["بنى الهرم الأكبر","وسع التجارة","طور الجيش"],
+"خفرع": ["بنى هرم الجيزة الثاني","شيد تمثال أبو الهول","وسع التجارة"],
+"منكاورع": ["بنى الهرم الثالث","وسع الأراضي","طور الجيش"],
+"جد كارع": ["وسع الأراضي","بنَى المعابد","طور الإدارة"],
+"سخر رع": ["وسع الأراضي","طور الجيش","شجع الفنون"],
+"بيبي الأول": ["وسع الأراضي","طور الإدارة","بنَى المعابد"],
+"بيبي الثاني": ["وسع الأراضي","طور الإدارة","شجع التجارة"],
+"أمنمحات الأول": ["وسع الأراضي","طور الجيش","وسع التجارة"],
+"سنوسرت الأول": ["وسع الأراضي","طور الجيش","وسع المعابد"],
+"سنوسرت الثاني": ["وسع الأراضي","طور الجيش","وسع التجارة"],
+"سنوسرت الثالث": ["وسع الأراضي","طور الجيش","وسع التجارة"],
+"أمنمحات الثالث": ["وسع الأراضي","طور الجيش","وسع القنوات"],
+"أحمس الأول": ["حرّر مصر من الهكسوس","أسّس الأسرة الثامنة عشر","طوّر الجيش"],
+"أمنحتب الأول": ["وسع الأراضي","طور الجيش","وسع التجارة"],
+"تحتمس الأول": ["وسع الأراضي","طور الجيش","أسّس مشاريع طرق"],
+"تحتمس الثاني": ["وسع الأراضي","طور الجيش","نظّم الجيش"],
+"حتشبسوت": ["أنشأت معابد ضخمة","شجّعت التجارة الخارجية","وسع شبكة الري"],
+"تحتمس الثالث": ["وسع الأراضي المصرية","قاد حملات ناجحة","طور الجيش"],
+"أمنحتب الثاني": ["وسع الأراضي","قاد حملات","طور الجيش"],
+"تحتمس الرابع": ["وسع التجارة","طور الزراعة","بنى المعابد"],
+"أمنحتب الثالث": ["وسع التجارة","طور الزراعة","بنَى المعابد"],
+"إخناتون": ["غيّر الديانة لعبادة آتون","أنشأ العاصمة الجديدة","وسع الزراعة"],
+"سمنخ كا رع": ["وسع الأراضي","طور الجيش","بنى المعابد"],
+"توت عنخ امون": ["مشهور بكنوزه المدفونة","وسع المعابد","طور الإدارة"],
+"آي": ["واصل سياسات توت عنخ آمون","وسع المعابد","طور الجيش"],
+"حورمحب": ["وسع الأراضي","طور الجيش","وسع المعابد"],
+"رعمس الأول": ["وسع الأراضي","طور الجيش","وسع التجارة"],
+"سيتي الأول": ["وسع الأراضي","قاد حملات ناجحة","طور الجيش"],
+"رمسيس الثاني": ["وسع التجارة","بنى معابد ضخمة","طور الجيش"],
+"مرن بتاح": ["واصل المشاريع","وسع الأراضي","طور الجيش"],
+"ستي الثاني": ["وسع الأراضي","طور الجيش","وسع التجارة"],
+"رمسيس الثالث": ["وسع الأراضي","طور الجيش","وسع التجارة"],
+"رمسيس الرابع": ["وسع الأراضي","طور الجيش","وسع التجارة"],
+"رمسيس الخامس": ["وسع الأراضي","طور الجيش","وسع التجارة"],
+"رمسيس السادس": ["وسع الأراضي","طور الجيش","وسع التجارة"],
+"رمسيس السابع": ["وسع الأراضي","طور الجيش","وسع التجارة"],
+"رمسيس الثامن": ["وسع الأراضي","طور الجيش","وسع التجارة"],
+"رمسيس التاسع": ["وسع الأراضي","طور الجيش","وسع التجارة"],
+"رمسيس العاشر": ["وسع الأراضي","طور الجيش","وسع التجارة"],
+"سان اختب رع": ["وسع الأراضي","طور الجيش","وسع المعابد"],
+"سيتي الثاني": ["وسع الأراضي","طور الجيش","وسع التجارة"],
+"سبت آه رع": ["وسع الأراضي","طور الجيش","وسع التجارة"],
+"نخت أنبو الأول": ["وسع الأراضي","طور الجيش","وسع التجارة"],
+"بيب الثاني": ["وسع الأراضي","طور الجيش","وسع التجارة"],
+"تموس نخت": ["وسع الأراضي","طور الجيش","وسع التجارة"],
+"شي بس سكيف": ["وسع الأراضي","طور الجيش","وسع التجارة"],
+"يوزركاف": ["وسع الأراضي","طور الجيش","وسع التجارة"],
+"هونى": ["وسع الأراضي","طور الجيش","وسع التجارة"],
+"شيخم كي خت": ["وسع الأراضي","طور الجيش","وسع التجارة"],
+"خعبا": ["وسع الأراضي","طور الجيش","وسع التجارة"],
+"سيكهن رعا": ["وسع الأراضي","طور الجيش","وسع التجارة"],
+"سيبي": ["وسع الأراضي","طور الجيش","وسع التجارة"],
+"أوسركاف": ["وسع الأراضي","طور الجيش","وسع التجارة"],
+"حصد جحوتي": ["وسع الأراضي","طور الجيش","وسع التجارة"],
+"خوف ين رع": ["وسع الأراضي","طور الجيش","وسع التجارة"],
+"منتوحتب الثاني": ["وسع الأراضي","طور الجيش","وسع التجارة"],
+"منتوحتب الثالث": ["وسع الأراضي","طور الجيش","وسع التجارة"],
+"آمنمحات الرابع": ["وسع الأراضي","طور الجيش","وسع التجارة"],
+"آمنمحات الخامس": ["وسع الأراضي","طور الجيش","وسع التجارة"],
+"سمنخ كارع": ["وسع الأراضي","طور الجيش","وسع التجارة"],
+"بني نفر كا رع": ["وسع الأراضي","طور الجيش","وسع التجارة"],
+"ني كت رع": ["وسع الأراضي","طور الجيش","وسع التجارة"],
+"دع محتر رع": ["وسع الأراضي","طور الجيش","وسع التجارة"],
+"نفروس رع الثاني": ["وسع الأراضي","طور الجيش","وسع التجارة"],
+"أحمس نفرتاري": ["وسع الأراضي","طور الجيش","وسع التجارة"],
+"مر نبتاح الثاني": ["وسع الأراضي","طور الجيش","وسع التجارة"],
+"بنيسن نخت": ["وسع الأراضي","طور الجيش","وسع التجارة"],
+"أمنمحات الثاني": ["وسع الأراضي","طور الجيش","وسع التجارة"],
+"مر كبت رع": ["وسع الأراضي","طور الجيش","وسع التجارة"],
+"أ بند رع": ["وسع الأراضي","طور الجيش","وسع التجارة"],
+"سين نخت إلرع": ["وسع الأراضي","طور الجيش","وسع التجارة"],
+"أحمس ميري آمون": ["وسع الأراضي","طور الجيش","وسع التجارة"],
+  "محمد نجيب":["أول رئيس لمصر"],
+  "جمال عبد الناصر":["قائد ثورة 1952","مشاريع قومية"],
+  "أنور السادات":["حرب أكتوبر","نوبل للسلام"],
+  "حسني مبارك":["1981 - 2011"],
+  "عبد الفتاح السيسي":["مشاريع قومية","رئيس حالي"]
+};
+
+function searchFigure(){
+  const v=searchInput.value.trim();
+  results.innerHTML="";
+  if(figures[v]){
+    playSound(800,200);
+    figures[v].forEach(t=>{
+      const d=document.createElement("div");
+      d.className="task";
+      d.textContent=t;
+      results.appendChild(d);
+    });
+  }else{
+    playSound(200,400); vibrate(200);
+    results.textContent="❌ لا توجد معلومات";
+  }
+}
+
+window.onload=()=>{
+  if(localStorage.getItem(THEME_KEY)==="light")
+    document.body.classList.add("light");
+  muteToggle.textContent=isMuted?"🔇 تشغيل الصوت":"🔊 كتم الصوت";
+  if(localStorage.getItem(USER_KEY)) startApp();
+};
+</script>
+
+</body>
+</html>
